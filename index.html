@@ -51,6 +51,7 @@
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
       </svg>
       Settings
+      <span id="credDot" title="DataforSEO credentials status" class="w-2 h-2 rounded-full bg-red-400 flex-shrink-0"></span>
     </button>
   </div>
 </header>
@@ -89,7 +90,8 @@
         </select>
       </div>
       <p class="text-xs text-slate-400">
-        Credentials are stored only in your browser's localStorage and never sent anywhere except directly to DataforSEO's API.
+        Credentials are saved in your browser's localStorage and automatically restored every time you open the tool — you only need to enter them once.
+        They are never sent anywhere except directly to DataforSEO's API.
       </p>
     </div>
     <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
@@ -167,8 +169,8 @@
           <label class="flex items-start gap-2.5 cursor-pointer">
             <input id="includeSiteKeywords" type="checkbox" checked class="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500" />
             <div>
-              <span class="text-sm font-medium text-slate-700">Site Keywords</span>
-              <p class="text-xs text-slate-500 mt-0.5">Include keywords the domain already ranks for</p>
+              <span class="text-sm font-medium text-slate-700">Crawl Site Content</span>
+              <p class="text-xs text-slate-500 mt-0.5">Fetch page titles &amp; headings to boost topically relevant keywords</p>
             </div>
           </label>
           <label class="flex items-start gap-2.5 cursor-pointer">
@@ -294,7 +296,6 @@
           <option value="">All Sources</option>
           <option value="suggestions">Suggestions</option>
           <option value="related">Related</option>
-          <option value="site">Site Keywords</option>
         </select>
         <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
           <input id="filterBrandedOnly" type="checkbox" class="rounded text-indigo-600" />
@@ -497,58 +498,119 @@ function classifyIntent(keyword) {
   return 'general';
 }
 
+/* ── SITE CONTENT EXTRACTION ────────────────────────────────────── */
+// Returns a Map of term → weighted frequency from on_page/instant_pages response.
+// Higher-weighted terms come from titles and H1s; lower from body/meta.
+function extractContentTerms(data) {
+  const STOPWORDS = new Set([
+    'the','be','to','of','and','a','in','that','have','it','for','not','on',
+    'with','as','you','do','at','this','but','his','by','from','they','we',
+    'say','her','she','or','an','will','my','one','all','would','there',
+    'their','what','so','up','out','if','about','who','get','which','go',
+    'me','when','make','can','like','time','no','just','him','know','take',
+    'people','into','year','your','good','some','could','them','see','other',
+    'than','then','now','look','only','come','its','over','think','also',
+    'back','after','use','two','how','our','work','first','well','way',
+    'even','new','want','because','any','these','give','day','most','us',
+    'are','was','were','been','being','is','has','had','did','does','will',
+    'would','could','should','may','might','shall','must','need','am',
+    'he','she','it','we','they','you','i','www','com','http','https',
+  ]);
+
+  const terms = new Map();
+
+  function addText(text, weight) {
+    if (!text) return;
+    const words = text.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 2 && !STOPWORDS.has(w) && !/^\d+$/.test(w));
+    for (const word of words) {
+      terms.set(word, (terms.get(word) || 0) + weight);
+    }
+  }
+
+  for (const task of (data.tasks || [])) {
+    // instant_pages puts items directly under result[], not nested deeper
+    const resultItems = (task.result || []).flatMap(r => r.items || []);
+    // fallback: items at task level
+    const items = resultItems.length ? resultItems : (task.items || []);
+    for (const item of items) {
+      if (!item) continue;
+      // skip error pages
+      if (item.status_code && item.status_code >= 400) continue;
+      const meta = item.meta || {};
+      addText(meta.title,                                    4.0);
+      addText((meta.htags?.h1 || []).join(' '),              5.0);
+      addText((meta.htags?.h2 || []).join(' '),              3.0);
+      addText((meta.htags?.h3 || []).join(' '),              2.0);
+      addText(meta.description,                              2.5);
+      addText(meta.keywords,                                 2.0);
+    }
+  }
+  return terms;
+}
+
 /* ── SCORING ────────────────────────────────────────────────────── */
-function scoreAndRank(keywords, { brandName, domain, seedKeywords, includeBranded }) {
+// contentTerms: Map<string, number> from extractContentTerms(), or null
+function scoreAndRank(keywords, { brandName, domain, seedKeywords, includeBranded, contentTerms }) {
   const brandTerms  = brandName.toLowerCase().split(/\W+/).filter(Boolean);
   const domainStem  = domain.replace(/^www\./,'').split('.')[0].toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
   const allBrand    = [...new Set([...brandTerms, ...domainStem])];
   const seedTerms   = seedKeywords.flatMap(k => k.toLowerCase().split(/\W+/).filter(w => w.length > 2));
 
-  const maxVol = Math.max(...keywords.map(k => k.search_volume), 1);
+  const maxVol     = Math.max(...keywords.map(k => k.search_volume), 1);
+  const maxContent = contentTerms?.size ? Math.max(...contentTerms.values(), 1) : 1;
 
   const scored = keywords.map(kw => {
     const words = kw.keyword.split(/\W+/).filter(Boolean);
 
     // Brand relevance
     const hasBrand = allBrand.some(t => words.includes(t));
-    if (hasBrand && !includeBranded) return null; // filtered by option
-
+    if (hasBrand && !includeBranded) return null;
     const brandScore = hasBrand ? 1.0 : 0.0;
 
-    // Seed overlap (how many seed terms appear in keyword)
+    // Seed overlap — how many seed terms appear in this keyword
     const seedMatches = words.filter(w => seedTerms.includes(w)).length;
     const seedScore   = seedMatches / Math.max(words.length, 1);
 
-    // Volume score (log-normalized)
+    // Site content relevance — boost keywords whose terms appear in crawled pages
+    // Each matching word contributes proportionally to its TF-weighted importance
+    const contentScore = contentTerms
+      ? words.reduce((sum, w) => sum + ((contentTerms.get(w) || 0) / maxContent), 0) / Math.max(words.length, 1)
+      : 0;
+
+    // Volume score (log-normalized so high-volume doesn't completely dominate)
     const volScore = kw.search_volume > 0
       ? Math.log(kw.search_volume + 1) / Math.log(maxVol + 1)
       : 0;
 
-    // Opportunity: volume × (1 – difficulty/100)
-    const diff    = kw.keyword_difficulty >= 0 ? kw.keyword_difficulty : 50;
+    // Opportunity: volume × (1 – difficulty/100) — favours rankable terms
+    const diff     = kw.keyword_difficulty >= 0 ? kw.keyword_difficulty : 50;
     const oppScore = volScore * (1 - diff / 100);
 
     // Long-tail bonus
-    const longTailBonus = words.length >= 3 ? 0.05 : 0;
+    const longTailBonus = words.length >= 3 ? 0.04 : 0;
 
     // Composite score
     const score = (
-      brandScore  * 0.08 +
-      seedScore   * 0.32 +
-      volScore    * 0.28 +
-      oppScore    * 0.28 +
+      brandScore    * 0.07 +
+      seedScore     * 0.26 +
+      contentScore  * 0.20 +   // site content match (new)
+      volScore      * 0.22 +
+      oppScore      * 0.25 +
       longTailBonus
     );
 
     return {
       ...kw,
-      brand_related: hasBrand,
-      intent: classifyIntent(kw.keyword),
-      score: Math.min(1, score),
+      brand_related:  hasBrand,
+      content_match:  contentTerms ? contentScore > 0.05 : false,
+      intent:         classifyIntent(kw.keyword),
+      score:          Math.min(1, score),
     };
   }).filter(Boolean);
 
-  // Sort by score descending
   scored.sort((a, b) => b.score - a.score);
   return scored;
 }
@@ -557,7 +619,7 @@ function scoreAndRank(keywords, { brandName, domain, seedKeywords, includeBrande
 const phases = [
   { id: 'p1', label: 'Expanding seed keywords'       },
   { id: 'p2', label: 'Fetching related keywords'     },
-  { id: 'p3', label: 'Analyzing domain keywords'     },
+  { id: 'p3', label: 'Crawling site content'         },
   { id: 'p4', label: 'Deduplicating & scoring'       },
 ];
 
@@ -592,7 +654,7 @@ function setPhaseStatus(id, status, count) {
     icon.className = 'w-5 h-5 flex-shrink-0 rounded-full bg-green-50 flex items-center justify-center';
     bar.style.width = '100%';
     bar.classList.replace('bg-indigo-500', 'bg-green-400');
-    if (count != null) cnt.textContent = count.toLocaleString() + ' kw';
+    if (count != null) cnt.textContent = typeof count === 'string' ? count : count.toLocaleString() + ' kw';
   } else if (status === 'skipped') {
     icon.innerHTML = `<span class="block w-2 h-2 rounded-full bg-slate-300"></span>`;
     cnt.textContent = 'skipped';
@@ -682,24 +744,53 @@ async function runResearch() {
       setProgress(60, 'Skipped related keywords.');
     }
 
-    /* PHASE 3: domain keywords */
+    /* PHASE 3: crawl site content to build a topic relevance profile */
+    let contentTerms = null;
     if (inclSite && domain) {
       setPhaseStatus('p3', 'running');
-      setProgress(62, `Analyzing keywords for ${domain}…`);
-      const siteData = await dfsPost('/dataforseo_labs/google/keywords_for_site/live', [{
-        target: domain,
-        location_code: loc.code,
-        language_code: loc.lang,
-        limit: Math.min(targetCount * 2, 1000),
-      }], auth);
-      if (state.cancelled) return;
-      const siteKws = extractItems(siteData, 'site');
-      allKeywords.push(...siteKws);
-      setPhaseStatus('p3', 'done', siteKws.length);
-      setProgress(80, `Got ${siteKws.length} domain keywords.`);
+      setProgress(62, `Crawling ${domain} to understand site content…`);
+
+      // Fetch homepage plus common structural pages in one batch request.
+      // Non-existent pages return 404 and are silently ignored by extractContentTerms.
+      const pagesToCrawl = [
+        `https://${domain}/`,
+        `https://${domain}/about`,
+        `https://${domain}/products`,
+        `https://${domain}/services`,
+        `https://${domain}/solutions`,
+      ];
+      try {
+        const crawlData = await dfsPost(
+          '/on_page/instant_pages',
+          pagesToCrawl.map(url => ({
+            url,
+            load_resources:          false,
+            enable_javascript:       false,
+            enable_browser_rendering: false,
+          })),
+          auth
+        );
+        if (state.cancelled) return;
+
+        contentTerms = extractContentTerms(crawlData);
+
+        // Count successfully crawled pages (status < 400)
+        const pageCount = (crawlData.tasks || []).reduce((sum, t) => {
+          const items = (t.result || []).flatMap(r => r.items || []);
+          return sum + items.filter(i => i && (!i.status_code || i.status_code < 400)).length;
+        }, 0);
+
+        setPhaseStatus('p3', 'done', `${pageCount} page${pageCount !== 1 ? 's' : ''}`);
+        setProgress(80, `Analyzed ${pageCount} page(s), extracted ${contentTerms.size} content terms.`);
+      } catch (crawlErr) {
+        // Non-fatal — scoring continues without content weighting
+        console.warn('Site crawl failed (non-fatal):', crawlErr.message);
+        setPhaseStatus('p3', 'skipped');
+        setProgress(80, 'Site crawl skipped — scoring without content context.');
+      }
     } else {
       setPhaseStatus('p3', 'skipped');
-      setProgress(80, 'Skipped domain keyword analysis.');
+      setProgress(80, 'Skipped site content crawl.');
     }
 
     /* PHASE 4: dedup + score */
@@ -707,7 +798,7 @@ async function runResearch() {
     setProgress(85, 'Deduplicating and scoring…');
 
     const unique  = dedup(allKeywords);
-    const ranked  = scoreAndRank(unique, { brandName, domain, seedKeywords, includeBranded: inclBrand });
+    const ranked  = scoreAndRank(unique, { brandName, domain, seedKeywords, includeBranded: inclBrand, contentTerms });
     const final   = ranked.slice(0, targetCount);
 
     state.results = final;
@@ -828,7 +919,7 @@ function applyFiltersAndRender() {
           </div>
         </td>
         <td class="px-4 py-2.5 text-sm text-slate-500">
-          ${sourceLabel(kw.source, kw.brand_related)}
+          ${sourceLabel(kw.source, kw.brand_related, kw.content_match)}
         </td>
       </tr>
     `).join('');
@@ -864,10 +955,12 @@ function scoreBarColor(s) {
   if (s >= 0.3) return 'bg-amber-400';
   return 'bg-slate-300';
 }
-function sourceLabel(source, branded) {
-  const labels = { suggestions: 'Suggestions', related: 'Related', site: 'Site' };
-  const badge = branded ? `<span class="ml-1 text-xs text-indigo-600 bg-indigo-50 rounded px-1">branded</span>` : '';
-  return (labels[source] || source) + badge;
+function sourceLabel(source, branded, contentMatch) {
+  const labels = { suggestions: 'Suggestions', related: 'Related' };
+  let badges = '';
+  if (branded)      badges += `<span class="ml-1 text-xs text-indigo-600 bg-indigo-50 rounded px-1">branded</span>`;
+  if (contentMatch) badges += `<span class="ml-1 text-xs text-teal-700 bg-teal-50 rounded px-1">on-site</span>`;
+  return (labels[source] || source) + badges;
 }
 
 /* ── SORT ───────────────────────────────────────────────────────── */
@@ -978,6 +1071,14 @@ function openSettings() {
 function closeSettings() {
   document.getElementById('settingsModal').classList.add('hidden');
 }
+function updateCredDot() {
+  const dot = document.getElementById('credDot');
+  if (!dot) return;
+  const ok = !!(state.settings.login && state.settings.password);
+  dot.className = `w-2 h-2 rounded-full flex-shrink-0 ${ok ? 'bg-green-400' : 'bg-red-400'}`;
+  dot.title = ok ? 'DataforSEO credentials saved' : 'DataforSEO credentials not set';
+}
+
 function saveAndCloseSettings() {
   state.settings.login    = document.getElementById('dfsLogin').value.trim();
   state.settings.password = document.getElementById('dfsPassword').value.trim();
@@ -987,6 +1088,7 @@ function saveAndCloseSettings() {
   // Update main location selector default
   populateLocations(document.getElementById('locationSelect'), state.settings.defaultLocation);
   if (state.settings.login && state.settings.password) showCredWarning(false);
+  updateCredDot();
   showToast('Settings saved!', 'green');
 }
 
@@ -1044,9 +1146,13 @@ document.getElementById('btnToggleAdvanced').addEventListener('click', () => {
   populateLocations(document.getElementById('locationSelect'),   state.settings.defaultLocation || 2840);
   populateLocations(document.getElementById('defaultLocation'),  state.settings.defaultLocation || 2840);
 
-  // Show credential warning if not set
+  // Credential status dot
+  updateCredDot();
+
   if (!state.settings.login || !state.settings.password) {
+    // No credentials yet — show warning and open settings automatically
     document.getElementById('credWarning').classList.remove('hidden');
+    openSettings();
   }
 })();
 </script>
