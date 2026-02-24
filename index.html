@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEO Keyword Research Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .spinner { animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .pulse-dot { animation: pulse 1.5s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:1} }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { background-color: #f1f5f9; }
+    th.sort-asc::after  { content: ' ↑'; }
+    th.sort-desc::after { content: ' ↓'; }
+    .progress-bar { transition: width 0.4s ease; }
+    input[type=range] { accent-color: #4f46e5; }
+    .keyword-row:hover { background-color: #f8fafc; }
+    .tag-info          { background:#dbeafe; color:#1d4ed8; }
+    .tag-commercial    { background:#fef3c7; color:#b45309; }
+    .tag-transactional { background:#dcfce7; color:#166534; }
+    .tag-general       { background:#f1f5f9; color:#475569; }
+    .diff-low          { background:#dcfce7; color:#166534; }
+    .diff-medium       { background:#fef3c7; color:#b45309; }
+    .diff-high         { background:#fee2e2; color:#dc2626; }
+    .scroll-table { max-height: 72vh; overflow-y: auto; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  </style>
+</head>
+
+<body class="h-full font-sans antialiased text-slate-800">
+
+<!-- ─── HEADER ─────────────────────────────────────────────────── -->
+<header class="bg-white border-b border-slate-200 sticky top-0 z-40">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <svg class="w-7 h-7 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+      </svg>
+      <span class="font-bold text-lg text-slate-900 tracking-tight">SEO Keyword Research Agent</span>
+    </div>
+    <button id="btnSettings"
+      class="flex items-center gap-2 text-sm text-slate-600 hover:text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+      Settings
+    </button>
+  </div>
+</header>
+
+<!-- ─── SETTINGS MODAL ─────────────────────────────────────────── -->
+<div id="settingsModal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+      <h2 class="font-semibold text-slate-900">Settings</h2>
+      <button id="btnCloseSettings" class="text-slate-400 hover:text-slate-600 transition-colors">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="px-6 py-5 space-y-5">
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">DataforSEO Credentials</label>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Login (email)</label>
+            <input id="dfsLogin" type="email" placeholder="your@email.com"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Password</label>
+            <input id="dfsPassword" type="password" placeholder="••••••••"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" />
+          </div>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Default Market</label>
+        <select id="defaultLocation"
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </select>
+      </div>
+      <p class="text-xs text-slate-400">
+        Credentials are stored only in your browser's localStorage and never sent anywhere except directly to DataforSEO's API.
+      </p>
+    </div>
+    <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+      <button id="btnCancelSettings"
+        class="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition-colors">Cancel</button>
+      <button id="btnSaveSettings"
+        class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">Save Settings</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MAIN CONTENT ───────────────────────────────────────────── -->
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+  <!-- RESEARCH FORM ─────────────────────────────────────────────── -->
+  <section id="formSection" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="px-6 py-5 border-b border-slate-100">
+      <h1 class="text-lg font-semibold text-slate-900">Keyword Research</h1>
+      <p class="text-sm text-slate-500 mt-0.5">Enter your brand details and seed keywords to generate a comprehensive SEO keyword list.</p>
+    </div>
+    <div class="px-6 py-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <!-- Left column -->
+        <div class="space-y-5">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1.5" for="brandName">Brand Name</label>
+            <input id="brandName" type="text" placeholder="e.g. Acme Corp"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1.5" for="websiteDomain">Website Domain</label>
+            <input id="websiteDomain" type="text" placeholder="e.g. acmecorp.com"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1.5" for="locationSelect">Target Market</label>
+            <select id="locationSelect"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </select>
+          </div>
+        </div>
+
+        <!-- Right column -->
+        <div class="space-y-5">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1.5" for="seedKeywords">
+              Seed Keywords <span class="text-slate-400 font-normal">(one per line)</span>
+            </label>
+            <textarea id="seedKeywords" rows="5" placeholder="project management software&#10;team collaboration tool&#10;workflow automation&#10;task management app"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none font-mono"></textarea>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">
+              Target Keyword Count: <span id="kwCountDisplay" class="text-indigo-600 font-semibold">150</span>
+            </label>
+            <input id="kwCount" type="range" min="10" max="500" step="10" value="150" class="w-full h-2 rounded-full" />
+            <div class="flex justify-between text-xs text-slate-400 mt-1">
+              <span>10</span><span>100</span><span>200</span><span>350</span><span>500</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Advanced Options -->
+      <div class="mt-5">
+        <button id="btnToggleAdvanced" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1 transition-colors">
+          <svg id="advancedChevron" class="w-4 h-4 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+          Advanced Options
+        </button>
+        <div id="advancedPanel" class="hidden mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+          <label class="flex items-start gap-2.5 cursor-pointer">
+            <input id="includeSiteKeywords" type="checkbox" checked class="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500" />
+            <div>
+              <span class="text-sm font-medium text-slate-700">Site Keywords</span>
+              <p class="text-xs text-slate-500 mt-0.5">Include keywords the domain already ranks for</p>
+            </div>
+          </label>
+          <label class="flex items-start gap-2.5 cursor-pointer">
+            <input id="includeBranded" type="checkbox" checked class="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500" />
+            <div>
+              <span class="text-sm font-medium text-slate-700">Branded Keywords</span>
+              <p class="text-xs text-slate-500 mt-0.5">Include keywords containing the brand name</p>
+            </div>
+          </label>
+          <label class="flex items-start gap-2.5 cursor-pointer">
+            <input id="includeRelated" type="checkbox" checked class="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500" />
+            <div>
+              <span class="text-sm font-medium text-slate-700">Related Keywords</span>
+              <p class="text-xs text-slate-500 mt-0.5">Expand via related keyword suggestions</p>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="mt-6 flex items-center gap-4">
+        <button id="btnResearch"
+          class="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm shadow-indigo-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+          Run Research
+        </button>
+        <div id="credWarning" class="hidden text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
+          ⚠ Enter DataforSEO credentials in Settings first.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROGRESS SECTION ─────────────────────────────────────────── -->
+  <section id="progressSection" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200">
+    <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+      <h2 class="text-base font-semibold text-slate-900 flex items-center gap-2">
+        <svg class="spinner w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+        Researching Keywords…
+      </h2>
+      <button id="btnCancel" class="text-xs text-slate-500 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors border border-slate-200">
+        Cancel
+      </button>
+    </div>
+    <div class="px-6 py-6 space-y-5">
+      <div id="phases" class="space-y-4"></div>
+      <div class="mt-2 text-sm text-slate-500" id="progressMsg">Initializing…</div>
+      <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+        <div id="overallBar" class="progress-bar bg-indigo-500 h-2 rounded-full" style="width:0%"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ERROR SECTION ────────────────────────────────────────────── -->
+  <div id="errorSection" class="hidden bg-red-50 border border-red-200 rounded-2xl px-6 py-5 flex items-start gap-4">
+    <svg class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+    </svg>
+    <div>
+      <p class="font-semibold text-red-800 text-sm">Research failed</p>
+      <p id="errorMsg" class="text-sm text-red-700 mt-1"></p>
+    </div>
+  </div>
+
+  <!-- RESULTS SECTION ──────────────────────────────────────────── -->
+  <section id="resultsSection" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200">
+    <!-- Results header -->
+    <div class="px-6 py-5 border-b border-slate-100">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="text-base font-semibold text-slate-900">Results</h2>
+          <p id="resultsSummary" class="text-sm text-slate-500 mt-0.5"></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btnExportCSV"
+            class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            Export CSV
+          </button>
+          <button id="btnCopyClipboard"
+            class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+            </svg>
+            Copy Keywords
+          </button>
+          <button id="btnNewSearch"
+            class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            New Search
+          </button>
+        </div>
+      </div>
+
+      <!-- Stats bar -->
+      <div id="statsBar" class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+
+      <!-- Filters -->
+      <div class="mt-4 flex flex-wrap gap-3">
+        <input id="filterKeyword" type="text" placeholder="Filter keywords…"
+          class="flex-1 min-w-[180px] rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <select id="filterIntent"
+          class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Intents</option>
+          <option value="informational">Informational</option>
+          <option value="commercial">Commercial</option>
+          <option value="transactional">Transactional</option>
+          <option value="general">General</option>
+        </select>
+        <select id="filterSource"
+          class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Sources</option>
+          <option value="suggestions">Suggestions</option>
+          <option value="related">Related</option>
+          <option value="site">Site Keywords</option>
+        </select>
+        <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+          <input id="filterBrandedOnly" type="checkbox" class="rounded text-indigo-600" />
+          Branded only
+        </label>
+      </div>
+    </div>
+
+    <!-- Results table -->
+    <div class="scroll-table">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider sticky top-0 z-10">
+          <tr>
+            <th class="sortable px-4 py-3 text-left" data-col="keyword">Keyword</th>
+            <th class="sortable px-4 py-3 text-right" data-col="search_volume">Monthly Searches</th>
+            <th class="sortable px-4 py-3 text-right" data-col="cpc">CPC ($)</th>
+            <th class="sortable px-4 py-3 text-right" data-col="keyword_difficulty">Difficulty</th>
+            <th class="sortable px-4 py-3 text-center" data-col="intent">Intent</th>
+            <th class="sortable px-4 py-3 text-center" data-col="score">Score</th>
+            <th class="px-4 py-3 text-left">Source</th>
+          </tr>
+        </thead>
+        <tbody id="resultsBody" class="divide-y divide-slate-100"></tbody>
+      </table>
+      <div id="noResults" class="hidden py-12 text-center text-slate-400 text-sm">No keywords match your filters.</div>
+    </div>
+    <div class="px-6 py-3 border-t border-slate-100 text-xs text-slate-400" id="tableFooter"></div>
+  </section>
+
+</main>
+
+<!-- TOAST ────────────────────────────────────────────────────── -->
+<div id="toast" class="fixed bottom-6 right-6 hidden z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white transition-all"></div>
+
+<!-- ─── JAVASCRIPT ─────────────────────────────────────────────── -->
+<script>
+'use strict';
+
+/* ── CONSTANTS ──────────────────────────────────────────────────── */
+const LOCATIONS = [
+  { name: 'United States',   code: 2840, lang: 'en' },
+  { name: 'United Kingdom',  code: 2826, lang: 'en' },
+  { name: 'Canada',          code: 2124, lang: 'en' },
+  { name: 'Australia',       code: 2036, lang: 'en' },
+  { name: 'Germany',         code: 2276, lang: 'de' },
+  { name: 'France',          code: 2250, lang: 'fr' },
+  { name: 'Spain',           code: 2724, lang: 'es' },
+  { name: 'Italy',           code: 2380, lang: 'it' },
+  { name: 'Netherlands',     code: 2528, lang: 'nl' },
+  { name: 'Brazil',          code: 2076, lang: 'pt' },
+  { name: 'Mexico',          code: 2484, lang: 'es' },
+  { name: 'India',           code: 2356, lang: 'en' },
+  { name: 'Singapore',       code: 2702, lang: 'en' },
+  { name: 'Ireland',         code: 2372, lang: 'en' },
+  { name: 'New Zealand',     code: 2554, lang: 'en' },
+  { name: 'South Africa',    code: 2710, lang: 'en' },
+  { name: 'Sweden',          code: 2752, lang: 'sv' },
+  { name: 'Denmark',         code: 2208, lang: 'da' },
+  { name: 'Norway',          code: 2578, lang: 'no' },
+  { name: 'Poland',          code: 2616, lang: 'pl' },
+];
+
+const DFS_BASE = 'https://api.dataforseo.com/v3';
+const LS_KEY   = 'kw_agent_settings';
+
+/* ── STATE ──────────────────────────────────────────────────────── */
+let state = {
+  settings: { login: '', password: '', defaultLocation: 2840 },
+  results: [],        // final ranked keyword list
+  filtered: [],       // view after filters
+  sortCol: 'score',
+  sortDir: 'desc',
+  cancelled: false,
+};
+
+/* ── SETTINGS ───────────────────────────────────────────────────── */
+function loadSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    state.settings = { login: '', password: '', defaultLocation: 2840, ...s };
+  } catch (_) {}
+}
+function saveSettings() {
+  localStorage.setItem(LS_KEY, JSON.stringify(state.settings));
+}
+
+/* ── LOCATION HELPERS ───────────────────────────────────────────── */
+function populateLocations(selectEl, selectedCode) {
+  selectEl.innerHTML = LOCATIONS.map(l =>
+    `<option value="${l.code}" ${l.code === selectedCode ? 'selected' : ''}>${l.name}</option>`
+  ).join('');
+}
+function locationByCode(code) {
+  return LOCATIONS.find(l => l.code === Number(code)) || LOCATIONS[0];
+}
+
+/* ── DATAFORSEO CLIENT ──────────────────────────────────────────── */
+function makeAuth(login, password) {
+  return 'Basic ' + btoa(login + ':' + password);
+}
+
+async function dfsPost(endpoint, tasks, auth) {
+  const res = await fetch(DFS_BASE + endpoint, {
+    method: 'POST',
+    headers: {
+      'Authorization': auth,
+      'Content-Type':  'application/json',
+    },
+    body: JSON.stringify(tasks),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => res.statusText);
+    throw new Error(`DataforSEO API error ${res.status}: ${txt}`);
+  }
+  return res.json();
+}
+
+/* ── KEYWORD EXTRACTION ─────────────────────────────────────────── */
+function extractItems(data, source) {
+  const out = [];
+  for (const task of (data.tasks || [])) {
+    if (!task.result) continue;
+    for (const result of task.result) {
+      for (const item of (result.items || [])) {
+        const kd  = item.keyword_data || item;
+        const ki  = (kd.keyword_info) || {};
+        const kp  = (kd.keyword_properties) || {};
+        const kw  = kd.keyword || item.keyword;
+        if (!kw) continue;
+        out.push({
+          keyword:            kw.toLowerCase().trim(),
+          search_volume:      ki.search_volume  || 0,
+          cpc:                ki.cpc            || 0,
+          competition:        ki.competition    || 0,
+          competition_level:  ki.competition_level || 'UNKNOWN',
+          keyword_difficulty: kp.keyword_difficulty != null ? kp.keyword_difficulty : -1,
+          monthly_searches:   ki.monthly_searches || [],
+          source,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/* Keyword suggestions endpoint returns a flat array per seed keyword */
+function extractSuggestions(data, source) {
+  const out = [];
+  for (const task of (data.tasks || [])) {
+    if (!task.result) continue;
+    for (const result of task.result) {
+      // result.items → array of keyword_data objects
+      for (const item of (result.items || [])) {
+        const kd = item.keyword_data || item;
+        const ki = kd.keyword_info || {};
+        const kp = kd.keyword_properties || {};
+        const kw = kd.keyword || item.keyword;
+        if (!kw) continue;
+        out.push({
+          keyword:            kw.toLowerCase().trim(),
+          search_volume:      ki.search_volume  || 0,
+          cpc:                ki.cpc            || 0,
+          competition:        ki.competition    || 0,
+          competition_level:  ki.competition_level || 'UNKNOWN',
+          keyword_difficulty: kp.keyword_difficulty != null ? kp.keyword_difficulty : -1,
+          monthly_searches:   ki.monthly_searches || [],
+          source,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/* ── DEDUPLICATION ──────────────────────────────────────────────── */
+function dedup(keywords) {
+  const map = new Map();
+  for (const kw of keywords) {
+    const existing = map.get(kw.keyword);
+    if (!existing || kw.search_volume > existing.search_volume) {
+      // prefer entry with higher volume (richer data)
+      const merged = existing
+        ? { ...existing, ...kw, search_volume: Math.max(existing.search_volume, kw.search_volume) }
+        : kw;
+      map.set(kw.keyword, merged);
+    }
+  }
+  return Array.from(map.values());
+}
+
+/* ── INTENT CLASSIFICATION ──────────────────────────────────────── */
+function classifyIntent(keyword) {
+  const k = keyword.toLowerCase();
+  if (/\b(buy|purchase|order|checkout|shop|deal|price|cost|cheap|discount|coupon|promo|sale|pricing|plans?|subscription|get started|sign up|hire|quote)\b/.test(k))
+    return 'transactional';
+  if (/\b(best|top|review|vs\.?|versus|compare|comparison|alternative|alternative to|recommended|pros? and cons?|is .* worth|rating)\b/.test(k))
+    return 'commercial';
+  if (/\b(how (to|do|does|can|much|many|long)|what (is|are|does)|why (is|does|do)|when (to|should|is)|where (to|is)|guide|tutorial|tips?|ideas?|examples?|learn|understand|definition|meaning|explained|overview|introduction)\b/.test(k))
+    return 'informational';
+  return 'general';
+}
+
+/* ── SCORING ────────────────────────────────────────────────────── */
+function scoreAndRank(keywords, { brandName, domain, seedKeywords, includeBranded }) {
+  const brandTerms  = brandName.toLowerCase().split(/\W+/).filter(Boolean);
+  const domainStem  = domain.replace(/^www\./,'').split('.')[0].toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
+  const allBrand    = [...new Set([...brandTerms, ...domainStem])];
+  const seedTerms   = seedKeywords.flatMap(k => k.toLowerCase().split(/\W+/).filter(w => w.length > 2));
+
+  const maxVol = Math.max(...keywords.map(k => k.search_volume), 1);
+
+  const scored = keywords.map(kw => {
+    const words = kw.keyword.split(/\W+/).filter(Boolean);
+
+    // Brand relevance
+    const hasBrand = allBrand.some(t => words.includes(t));
+    if (hasBrand && !includeBranded) return null; // filtered by option
+
+    const brandScore = hasBrand ? 1.0 : 0.0;
+
+    // Seed overlap (how many seed terms appear in keyword)
+    const seedMatches = words.filter(w => seedTerms.includes(w)).length;
+    const seedScore   = seedMatches / Math.max(words.length, 1);
+
+    // Volume score (log-normalized)
+    const volScore = kw.search_volume > 0
+      ? Math.log(kw.search_volume + 1) / Math.log(maxVol + 1)
+      : 0;
+
+    // Opportunity: volume × (1 – difficulty/100)
+    const diff    = kw.keyword_difficulty >= 0 ? kw.keyword_difficulty : 50;
+    const oppScore = volScore * (1 - diff / 100);
+
+    // Long-tail bonus
+    const longTailBonus = words.length >= 3 ? 0.05 : 0;
+
+    // Composite score
+    const score = (
+      brandScore  * 0.08 +
+      seedScore   * 0.32 +
+      volScore    * 0.28 +
+      oppScore    * 0.28 +
+      longTailBonus
+    );
+
+    return {
+      ...kw,
+      brand_related: hasBrand,
+      intent: classifyIntent(kw.keyword),
+      score: Math.min(1, score),
+    };
+  }).filter(Boolean);
+
+  // Sort by score descending
+  scored.sort((a, b) => b.score - a.score);
+  return scored;
+}
+
+/* ── PHASE TRACKING ─────────────────────────────────────────────── */
+const phases = [
+  { id: 'p1', label: 'Expanding seed keywords'       },
+  { id: 'p2', label: 'Fetching related keywords'     },
+  { id: 'p3', label: 'Analyzing domain keywords'     },
+  { id: 'p4', label: 'Deduplicating & scoring'       },
+];
+
+function renderPhases() {
+  const el = document.getElementById('phases');
+  el.innerHTML = phases.map(p => `
+    <div id="${p.id}" class="flex items-center gap-3">
+      <div id="${p.id}_icon" class="w-5 h-5 flex-shrink-0 rounded-full bg-slate-200 flex items-center justify-center">
+        <span class="block w-2 h-2 rounded-full bg-slate-400"></span>
+      </div>
+      <div class="flex-1">
+        <p class="text-sm font-medium text-slate-600">${p.label}</p>
+        <div class="mt-1 w-full bg-slate-100 rounded-full h-1">
+          <div id="${p.id}_bar" class="progress-bar bg-indigo-400 h-1 rounded-full" style="width:0%"></div>
+        </div>
+      </div>
+      <span id="${p.id}_count" class="text-xs text-slate-400 w-16 text-right"></span>
+    </div>
+  `).join('');
+}
+
+function setPhaseStatus(id, status, count) {
+  const icon = document.getElementById(id + '_icon');
+  const bar  = document.getElementById(id + '_bar');
+  const cnt  = document.getElementById(id + '_count');
+  if (status === 'running') {
+    icon.innerHTML = `<svg class="spinner w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>`;
+    bar.style.width = '40%';
+    bar.classList.replace('bg-indigo-400', 'bg-indigo-500');
+  } else if (status === 'done') {
+    icon.innerHTML = `<svg class="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>`;
+    icon.className = 'w-5 h-5 flex-shrink-0 rounded-full bg-green-50 flex items-center justify-center';
+    bar.style.width = '100%';
+    bar.classList.replace('bg-indigo-500', 'bg-green-400');
+    if (count != null) cnt.textContent = count.toLocaleString() + ' kw';
+  } else if (status === 'skipped') {
+    icon.innerHTML = `<span class="block w-2 h-2 rounded-full bg-slate-300"></span>`;
+    cnt.textContent = 'skipped';
+  }
+}
+
+function setProgress(pct, msg) {
+  document.getElementById('overallBar').style.width = pct + '%';
+  if (msg) document.getElementById('progressMsg').textContent = msg;
+}
+
+/* ── MAIN RESEARCH WORKFLOW ─────────────────────────────────────── */
+async function runResearch() {
+  const brandName  = document.getElementById('brandName').value.trim();
+  const domain     = document.getElementById('websiteDomain').value.trim().replace(/^https?:\/\//,'').replace(/\/$/, '');
+  const seedRaw    = document.getElementById('seedKeywords').value.trim();
+  const targetCount = parseInt(document.getElementById('kwCount').value, 10);
+  const locCode    = parseInt(document.getElementById('locationSelect').value, 10);
+  const inclSite   = document.getElementById('includeSiteKeywords').checked;
+  const inclBrand  = document.getElementById('includeBranded').checked;
+  const inclRel    = document.getElementById('includeRelated').checked;
+  const { login, password } = state.settings;
+
+  if (!login || !password) {
+    showCredWarning(true);
+    return;
+  }
+  if (!brandName || !domain || !seedRaw) {
+    showToast('Please fill in Brand Name, Domain, and at least one Seed Keyword.', 'amber');
+    return;
+  }
+
+  const seedKeywords = seedRaw.split('\n').map(s => s.trim()).filter(Boolean);
+  const loc  = locationByCode(locCode);
+  const auth = makeAuth(login, password);
+
+  state.cancelled = false;
+
+  // --- UI: switch to progress view ---
+  document.getElementById('formSection').classList.add('hidden');
+  document.getElementById('resultsSection').classList.add('hidden');
+  document.getElementById('errorSection').classList.add('hidden');
+  document.getElementById('progressSection').classList.remove('hidden');
+  renderPhases();
+  setProgress(0, 'Starting keyword research…');
+
+  try {
+    let allKeywords = [];
+
+    /* PHASE 1: keyword suggestions for each seed */
+    setPhaseStatus('p1', 'running');
+    setProgress(5, `Fetching keyword suggestions for ${seedKeywords.length} seed keyword(s)…`);
+
+    const suggestLimit = Math.max(100, Math.ceil(targetCount * 4 / seedKeywords.length));
+    const suggestTasks = seedKeywords.map(kw => ({
+      keyword: kw,
+      location_code: loc.code,
+      language_code: loc.lang,
+      limit: Math.min(suggestLimit, 1000),
+    }));
+    const suggestData = await dfsPost('/dataforseo_labs/google/keyword_suggestions/live', suggestTasks, auth);
+    if (state.cancelled) return;
+    const suggestKws = extractSuggestions(suggestData, 'suggestions');
+    allKeywords.push(...suggestKws);
+    setPhaseStatus('p1', 'done', suggestKws.length);
+    setProgress(30, `Got ${suggestKws.length} suggestions.`);
+
+    /* PHASE 2: related keywords */
+    if (inclRel) {
+      setPhaseStatus('p2', 'running');
+      setProgress(35, 'Fetching related keywords…');
+      const relTasks = seedKeywords.map(kw => ({
+        keyword: kw,
+        location_code: loc.code,
+        language_code: loc.lang,
+        depth: 2,
+        limit: 100,
+      }));
+      const relData = await dfsPost('/dataforseo_labs/google/related_keywords/live', relTasks, auth);
+      if (state.cancelled) return;
+      const relKws = extractItems(relData, 'related');
+      allKeywords.push(...relKws);
+      setPhaseStatus('p2', 'done', relKws.length);
+      setProgress(60, `Got ${relKws.length} related keywords.`);
+    } else {
+      setPhaseStatus('p2', 'skipped');
+      setProgress(60, 'Skipped related keywords.');
+    }
+
+    /* PHASE 3: domain keywords */
+    if (inclSite && domain) {
+      setPhaseStatus('p3', 'running');
+      setProgress(62, `Analyzing keywords for ${domain}…`);
+      const siteData = await dfsPost('/dataforseo_labs/google/keywords_for_site/live', [{
+        target: domain,
+        location_code: loc.code,
+        language_code: loc.lang,
+        limit: Math.min(targetCount * 2, 1000),
+      }], auth);
+      if (state.cancelled) return;
+      const siteKws = extractItems(siteData, 'site');
+      allKeywords.push(...siteKws);
+      setPhaseStatus('p3', 'done', siteKws.length);
+      setProgress(80, `Got ${siteKws.length} domain keywords.`);
+    } else {
+      setPhaseStatus('p3', 'skipped');
+      setProgress(80, 'Skipped domain keyword analysis.');
+    }
+
+    /* PHASE 4: dedup + score */
+    setPhaseStatus('p4', 'running');
+    setProgress(85, 'Deduplicating and scoring…');
+
+    const unique  = dedup(allKeywords);
+    const ranked  = scoreAndRank(unique, { brandName, domain, seedKeywords, includeBranded: inclBrand });
+    const final   = ranked.slice(0, targetCount);
+
+    state.results = final;
+
+    setPhaseStatus('p4', 'done', final.length);
+    setProgress(100, `Selected top ${final.length} keywords.`);
+
+    await delay(600); // brief pause so user sees 100%
+
+    renderResults({ brandName, domain, seedKeywords, totalFound: unique.length, targetCount });
+
+  } catch (err) {
+    if (state.cancelled) return;
+    showError(err.message);
+  }
+}
+
+/* ── RENDER RESULTS ─────────────────────────────────────────────── */
+function renderResults({ brandName, domain, seedKeywords, totalFound, targetCount }) {
+  document.getElementById('progressSection').classList.add('hidden');
+  document.getElementById('resultsSection').classList.remove('hidden');
+  document.getElementById('errorSection').classList.add('hidden');
+  document.getElementById('formSection').classList.remove('hidden');
+
+  const kws = state.results;
+
+  // Summary line
+  document.getElementById('resultsSummary').textContent =
+    `${kws.length.toLocaleString()} keywords selected from ${totalFound.toLocaleString()} found · ${brandName} · ${domain}`;
+
+  // Stats bar
+  renderStatsBar(kws);
+
+  // Init sort
+  state.sortCol = 'score';
+  state.sortDir = 'desc';
+  updateSortHeaders();
+
+  applyFiltersAndRender();
+}
+
+function renderStatsBar(kws) {
+  const avgVol   = kws.length ? Math.round(kws.reduce((s,k) => s + k.search_volume, 0) / kws.length) : 0;
+  const avgDiff  = kws.length ? Math.round(kws.filter(k => k.keyword_difficulty >= 0).reduce((s,k) => s + k.keyword_difficulty, 0) / Math.max(kws.filter(k => k.keyword_difficulty >= 0).length, 1)) : 0;
+  const branded  = kws.filter(k => k.brand_related).length;
+  const totalVol = kws.reduce((s,k) => s + k.search_volume, 0);
+
+  const stats = [
+    { label: 'Keywords',          value: kws.length.toLocaleString(),    icon: '📋' },
+    { label: 'Total Monthly Vol', value: fmtNum(totalVol),               icon: '📊' },
+    { label: 'Avg Search Volume', value: fmtNum(avgVol),                 icon: '🔍' },
+    { label: 'Branded',           value: branded.toLocaleString(),        icon: '🏷️' },
+  ];
+
+  document.getElementById('statsBar').innerHTML = stats.map(s => `
+    <div class="bg-slate-50 rounded-xl px-4 py-3 flex items-center gap-3">
+      <span class="text-xl">${s.icon}</span>
+      <div>
+        <p class="text-lg font-bold text-slate-900 leading-tight">${s.value}</p>
+        <p class="text-xs text-slate-500">${s.label}</p>
+      </div>
+    </div>
+  `).join('');
+}
+
+function applyFiltersAndRender() {
+  const kwFilter     = document.getElementById('filterKeyword').value.toLowerCase().trim();
+  const intentFilter = document.getElementById('filterIntent').value;
+  const sourceFilter = document.getElementById('filterSource').value;
+  const brandedOnly  = document.getElementById('filterBrandedOnly').checked;
+
+  let filtered = state.results.filter(kw => {
+    if (kwFilter     && !kw.keyword.includes(kwFilter))                 return false;
+    if (intentFilter && kw.intent !== intentFilter)                      return false;
+    if (sourceFilter && kw.source !== sourceFilter)                      return false;
+    if (brandedOnly  && !kw.brand_related)                               return false;
+    return true;
+  });
+
+  // Sort
+  filtered.sort((a, b) => {
+    let av = a[state.sortCol], bv = b[state.sortCol];
+    if (typeof av === 'string') av = av.toLowerCase(), bv = bv.toLowerCase();
+    if (av < bv) return state.sortDir === 'asc' ? -1 :  1;
+    if (av > bv) return state.sortDir === 'asc' ?  1 : -1;
+    return 0;
+  });
+
+  state.filtered = filtered;
+
+  const tbody = document.getElementById('resultsBody');
+  const noRes = document.getElementById('noResults');
+
+  if (!filtered.length) {
+    tbody.innerHTML = '';
+    noRes.classList.remove('hidden');
+  } else {
+    noRes.classList.add('hidden');
+    tbody.innerHTML = filtered.map(kw => `
+      <tr class="keyword-row">
+        <td class="px-4 py-2.5 font-mono text-sm text-slate-800">${escHtml(kw.keyword)}</td>
+        <td class="px-4 py-2.5 text-right text-sm font-medium text-slate-700">${fmtNum(kw.search_volume)}</td>
+        <td class="px-4 py-2.5 text-right text-sm text-slate-600">${kw.cpc > 0 ? '$' + kw.cpc.toFixed(2) : '—'}</td>
+        <td class="px-4 py-2.5 text-right">
+          ${kw.keyword_difficulty >= 0
+            ? `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${diffClass(kw.keyword_difficulty)}">${kw.keyword_difficulty}</span>`
+            : '<span class="text-slate-400 text-sm">—</span>'}
+        </td>
+        <td class="px-4 py-2.5 text-center">
+          <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${intentClass(kw.intent)}">${capitalize(kw.intent)}</span>
+        </td>
+        <td class="px-4 py-2.5 text-center">
+          <div class="flex items-center gap-1.5 justify-center">
+            <div class="w-16 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+              <div class="h-1.5 rounded-full ${scoreBarColor(kw.score)}" style="width:${Math.round(kw.score*100)}%"></div>
+            </div>
+            <span class="text-xs text-slate-500 w-8">${Math.round(kw.score * 100)}</span>
+          </div>
+        </td>
+        <td class="px-4 py-2.5 text-sm text-slate-500">
+          ${sourceLabel(kw.source, kw.brand_related)}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  document.getElementById('tableFooter').textContent =
+    `Showing ${filtered.length.toLocaleString()} of ${state.results.length.toLocaleString()} keywords`;
+}
+
+/* ── HELPERS ────────────────────────────────────────────────────── */
+function fmtNum(n) {
+  if (!n) return '—';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'K';
+  return n.toLocaleString();
+}
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function diffClass(d) {
+  if (d <= 30) return 'diff-low';
+  if (d <= 60) return 'diff-medium';
+  return 'diff-high';
+}
+function intentClass(i) {
+  return { informational: 'tag-info', commercial: 'tag-commercial', transactional: 'tag-transactional', general: 'tag-general' }[i] || 'tag-general';
+}
+function scoreBarColor(s) {
+  if (s >= 0.6) return 'bg-green-400';
+  if (s >= 0.3) return 'bg-amber-400';
+  return 'bg-slate-300';
+}
+function sourceLabel(source, branded) {
+  const labels = { suggestions: 'Suggestions', related: 'Related', site: 'Site' };
+  const badge = branded ? `<span class="ml-1 text-xs text-indigo-600 bg-indigo-50 rounded px-1">branded</span>` : '';
+  return (labels[source] || source) + badge;
+}
+
+/* ── SORT ───────────────────────────────────────────────────────── */
+function updateSortHeaders() {
+  document.querySelectorAll('th.sortable').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (th.dataset.col === state.sortCol) {
+      th.classList.add(state.sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+    }
+  });
+}
+
+document.querySelectorAll('th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.col;
+    if (state.sortCol === col) {
+      state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      state.sortCol = col;
+      state.sortDir = col === 'keyword' ? 'asc' : 'desc';
+    }
+    updateSortHeaders();
+    applyFiltersAndRender();
+  });
+});
+
+/* ── EXPORT ─────────────────────────────────────────────────────── */
+function exportCSV() {
+  const rows = state.filtered;
+  if (!rows.length) return;
+  const headers = ['Keyword', 'Monthly Searches', 'CPC ($)', 'Difficulty', 'Intent', 'Score', 'Source', 'Branded'];
+  const csv = [
+    headers.join(','),
+    ...rows.map(k => [
+      `"${k.keyword}"`,
+      k.search_volume,
+      k.cpc.toFixed(2),
+      k.keyword_difficulty >= 0 ? k.keyword_difficulty : '',
+      k.intent,
+      Math.round(k.score * 100),
+      k.source,
+      k.brand_related ? 'Yes' : 'No',
+    ].join(','))
+  ].join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `keywords-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV exported!', 'green');
+}
+
+function copyKeywords() {
+  const text = state.filtered.map(k => k.keyword).join('\n');
+  if (!text) return;
+  navigator.clipboard.writeText(text)
+    .then(() => showToast(`${state.filtered.length} keywords copied!`, 'green'))
+    .catch(() => {
+      // fallback
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast(`${state.filtered.length} keywords copied!`, 'green');
+    });
+}
+
+/* ── TOAST ──────────────────────────────────────────────────────── */
+let toastTimer;
+function showToast(msg, type = 'green') {
+  const el = document.getElementById('toast');
+  const colors = { green: 'bg-green-600', amber: 'bg-amber-500', red: 'bg-red-600' };
+  el.className = `fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white ${colors[type] || 'bg-slate-700'}`;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), 3200);
+}
+
+/* ── ERROR / WARNINGS ───────────────────────────────────────────── */
+function showError(msg) {
+  document.getElementById('progressSection').classList.add('hidden');
+  document.getElementById('formSection').classList.remove('hidden');
+  const sec = document.getElementById('errorSection');
+  sec.classList.remove('hidden');
+  document.getElementById('errorMsg').textContent = msg;
+}
+
+function showCredWarning(show) {
+  document.getElementById('credWarning').classList.toggle('hidden', !show);
+}
+
+/* ── SETTINGS MODAL ─────────────────────────────────────────────── */
+function openSettings() {
+  document.getElementById('dfsLogin').value    = state.settings.login    || '';
+  document.getElementById('dfsPassword').value = state.settings.password || '';
+  populateLocations(
+    document.getElementById('defaultLocation'),
+    state.settings.defaultLocation || 2840
+  );
+  document.getElementById('settingsModal').classList.remove('hidden');
+}
+function closeSettings() {
+  document.getElementById('settingsModal').classList.add('hidden');
+}
+function saveAndCloseSettings() {
+  state.settings.login    = document.getElementById('dfsLogin').value.trim();
+  state.settings.password = document.getElementById('dfsPassword').value.trim();
+  state.settings.defaultLocation = parseInt(document.getElementById('defaultLocation').value, 10);
+  saveSettings();
+  closeSettings();
+  // Update main location selector default
+  populateLocations(document.getElementById('locationSelect'), state.settings.defaultLocation);
+  if (state.settings.login && state.settings.password) showCredWarning(false);
+  showToast('Settings saved!', 'green');
+}
+
+/* ── WIRE UP EVENTS ─────────────────────────────────────────────── */
+document.getElementById('btnSettings').addEventListener('click', openSettings);
+document.getElementById('btnCloseSettings').addEventListener('click', closeSettings);
+document.getElementById('btnCancelSettings').addEventListener('click', closeSettings);
+document.getElementById('btnSaveSettings').addEventListener('click', saveAndCloseSettings);
+document.getElementById('settingsModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeSettings();
+});
+
+document.getElementById('btnResearch').addEventListener('click', runResearch);
+
+document.getElementById('btnCancel').addEventListener('click', () => {
+  state.cancelled = true;
+  document.getElementById('progressSection').classList.add('hidden');
+  document.getElementById('formSection').classList.remove('hidden');
+  showToast('Research cancelled.', 'amber');
+});
+
+document.getElementById('btnNewSearch').addEventListener('click', () => {
+  document.getElementById('resultsSection').classList.add('hidden');
+  document.getElementById('formSection').classList.remove('hidden');
+  document.getElementById('errorSection').classList.add('hidden');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+document.getElementById('btnExportCSV').addEventListener('click', exportCSV);
+document.getElementById('btnCopyClipboard').addEventListener('click', copyKeywords);
+
+// Filters
+['filterKeyword','filterIntent','filterSource','filterBrandedOnly'].forEach(id =>
+  document.getElementById(id).addEventListener('input', applyFiltersAndRender)
+);
+
+// Keyword count slider
+document.getElementById('kwCount').addEventListener('input', function() {
+  document.getElementById('kwCountDisplay').textContent = this.value;
+});
+
+// Advanced toggle
+document.getElementById('btnToggleAdvanced').addEventListener('click', () => {
+  const panel   = document.getElementById('advancedPanel');
+  const chevron = document.getElementById('advancedChevron');
+  const hidden  = panel.classList.toggle('hidden');
+  chevron.style.transform = hidden ? '' : 'rotate(90deg)';
+});
+
+/* ── INIT ───────────────────────────────────────────────────────── */
+(function init() {
+  loadSettings();
+
+  // Populate location selectors
+  populateLocations(document.getElementById('locationSelect'),   state.settings.defaultLocation || 2840);
+  populateLocations(document.getElementById('defaultLocation'),  state.settings.defaultLocation || 2840);
+
+  // Show credential warning if not set
+  if (!state.settings.login || !state.settings.password) {
+    document.getElementById('credWarning').classList.remove('hidden');
+  }
+})();
+</script>
+</body>
+</html>
