@@ -486,6 +486,117 @@ function dedup(keywords) {
   return Array.from(map.values());
 }
 
+/* ── VARIANT DEDUPLICATION ──────────────────────────────────────── */
+// Maps word forms to a canonical token so close variants hash to the same key.
+// E.g. "property manager software" and "property management software" both
+// normalize to "management|property|software".
+const VARIANT_MAP = {
+  // management role variants
+  'manager':      'management',
+  'managers':     'management',
+  'managing':     'management',
+  'managed':      'management',
+  // product type synonyms
+  'tool':         'software',
+  'tools':        'software',
+  'platform':     'software',
+  'platforms':    'software',
+  'solution':     'software',
+  'solutions':    'software',
+  'system':       'software',
+  'systems':      'software',
+  'app':          'software',
+  'apps':         'software',
+  'application':  'software',
+  'applications': 'software',
+  // service/org plurals
+  'services':     'service',
+  'companies':    'company',
+  'agencies':     'agency',
+  'providers':    'provider',
+  'vendors':      'vendor',
+  // superlative synonyms
+  'best':         'top',
+  'leading':      'top',
+};
+
+/** Canonical key for grouping close variants. Tokens are synonym-mapped then
+ *  sorted so word-order differences don't matter ("software management" ≡
+ *  "management software" after normalisation). */
+function variantKey(keyword) {
+  return keyword
+    .toLowerCase()
+    .split(/\W+/)
+    .filter(Boolean)
+    .map(w => VARIANT_MAP[w] ?? w)
+    .sort()
+    .join('|');
+}
+
+/** How well does `keyword` fit this brand's site copy?
+ *  Uses the contentTerms map (word → weighted frequency) from the site crawl
+ *  as a proxy for "how naturally does this phrasing appear in brand copy".
+ *  Falls back gracefully when no crawl data is available. */
+function siteFitScore(keyword, contentTerms, seedCorpus) {
+  const words = keyword.split(/\W+/).filter(Boolean);
+  const siteScore = contentTerms
+    ? words.reduce((n, w) => n + (contentTerms.get(w) || 0), 0) / Math.max(words.length, 1)
+    : 0;
+  const inSeed = seedCorpus.includes(keyword) ? 100000 : 0;
+  return siteScore + inSeed;
+}
+
+/** Among a group of close variants pick the one most natural for this brand.
+ *  Priority: (1) site content score (crawled copy frequency), (2) seed keyword
+ *  match, (3) search volume, (4) shorter/more concise phrasing. */
+function pickVariantWinner(variants, contentTerms, seedCorpus) {
+  return variants.reduce((best, kw) => {
+    if (!best) return kw;
+    const scoreKw   = siteFitScore(kw.keyword,   contentTerms, seedCorpus);
+    const scoreBest = siteFitScore(best.keyword,  contentTerms, seedCorpus);
+    if (scoreKw !== scoreBest) return scoreKw > scoreBest ? kw : best;
+    if (kw.search_volume !== best.search_volume)
+      return kw.search_volume > best.search_volume ? kw : best;
+    return kw.keyword.length <= best.keyword.length ? kw : best;
+  }, null);
+}
+
+/** Collapse keyword variants that Keyword Planner treats as duplicates.
+ *  Two keywords are collapsed only when they share the same variantKey AND
+ *  their search volumes are within 10% of each other (the KP-duplicate signal).
+ *  contentTerms is the Map produced by extractContentTerms(), or null.
+ *  Returns { keywords, removedCount }. */
+function dedupVariants(keywords, contentTerms, seedKeywords) {
+  const seedCorpus = seedKeywords.join(' ').toLowerCase();
+
+  const groups = new Map();
+  for (const kw of keywords) {
+    const key = variantKey(kw.keyword);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(kw);
+  }
+
+  const result = [];
+  let removedCount = 0;
+
+  for (const [, group] of groups) {
+    if (group.length === 1) { result.push(group[0]); continue; }
+
+    // Only collapse when all variants share exactly the same search volume
+    const vol = group[0].search_volume;
+    const sameVolume = group.every(k => k.search_volume === vol);
+
+    if (sameVolume) {
+      result.push(pickVariantWinner(group, contentTerms, seedCorpus));
+      removedCount += group.length - 1;
+    } else {
+      result.push(...group);
+    }
+  }
+
+  return { keywords: result, removedCount };
+}
+
 /* ── INTENT CLASSIFICATION ──────────────────────────────────────── */
 function classifyIntent(keyword) {
   const k = keyword.toLowerCase();
@@ -798,7 +909,12 @@ async function runResearch() {
     setProgress(85, 'Deduplicating and scoring…');
 
     const unique  = dedup(allKeywords);
-    const ranked  = scoreAndRank(unique, { brandName, domain, seedKeywords, includeBranded: inclBrand, contentTerms });
+
+    setProgress(90, 'Removing near-duplicate variants…');
+    const { keywords: devariated, removedCount: variantRemovedCount } =
+      dedupVariants(unique, contentTerms, seedKeywords);
+
+    const ranked  = scoreAndRank(devariated, { brandName, domain, seedKeywords, includeBranded: inclBrand, contentTerms });
     const final   = ranked.slice(0, targetCount);
 
     state.results = final;
@@ -808,7 +924,7 @@ async function runResearch() {
 
     await delay(600); // brief pause so user sees 100%
 
-    renderResults({ brandName, domain, seedKeywords, totalFound: unique.length, targetCount });
+    renderResults({ brandName, domain, seedKeywords, totalFound: devariated.length, variantRemovedCount, targetCount });
 
   } catch (err) {
     if (state.cancelled) return;
@@ -817,7 +933,7 @@ async function runResearch() {
 }
 
 /* ── RENDER RESULTS ─────────────────────────────────────────────── */
-function renderResults({ brandName, domain, seedKeywords, totalFound, targetCount }) {
+function renderResults({ brandName, domain, seedKeywords, totalFound, variantRemovedCount, targetCount }) {
   document.getElementById('progressSection').classList.add('hidden');
   document.getElementById('resultsSection').classList.remove('hidden');
   document.getElementById('errorSection').classList.add('hidden');
@@ -826,8 +942,11 @@ function renderResults({ brandName, domain, seedKeywords, totalFound, targetCoun
   const kws = state.results;
 
   // Summary line
+  const variantNote = variantRemovedCount > 0
+    ? ` · ${variantRemovedCount} near-duplicate variant${variantRemovedCount > 1 ? 's' : ''} removed`
+    : '';
   document.getElementById('resultsSummary').textContent =
-    `${kws.length.toLocaleString()} keywords selected from ${totalFound.toLocaleString()} found · ${brandName} · ${domain}`;
+    `${kws.length.toLocaleString()} keywords selected from ${totalFound.toLocaleString()} found${variantNote} · ${brandName} · ${domain}`;
 
   // Stats bar
   renderStatsBar(kws);
