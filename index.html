@@ -582,11 +582,9 @@ function dedupVariants(keywords, contentTerms, seedKeywords) {
   for (const [, group] of groups) {
     if (group.length === 1) { result.push(group[0]); continue; }
 
-    // Only collapse when volumes are nearly identical (KP near-duplicate signal)
-    const vols   = group.map(k => k.search_volume);
-    const maxVol = Math.max(...vols);
-    const minVol = Math.min(...vols);
-    const sameVolume = maxVol === 0 || (minVol / maxVol) >= 0.9;
+    // Only collapse when all variants share exactly the same search volume
+    const vol = group[0].search_volume;
+    const sameVolume = group.every(k => k.search_volume === vol);
 
     if (sameVolume) {
       result.push(pickVariantWinner(group, contentTerms, seedCorpus));
